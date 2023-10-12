@@ -1,0 +1,13 @@
+<!-- dashboard/dashboard.html -->
+<h2>Dashboard</h2>
+
+<p>Total Stock for the Day: {{ total_stock }}</p>
+<p>Total Sales for the Day: {{ total_sales }}</p>
+<p>Profit & Loss: {{ profit_loss }}</p>
+
+<h3>New Orders</h3>
+<ul>
+    {% for order in new_orders %}
+        <li>{{ order.product.product_name }} - {{ order.quantity_ordered }}</li>
+    {% endfor %}
+</ul>

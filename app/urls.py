@@ -5,15 +5,18 @@ from app import views
 from rest_framework_simplejwt import views as jwt_views
 from rest_framework import routers
 router = routers.DefaultRouter()
-router.register('user',UserViewSet,basename='UserViewSet')
-router.register('task',TaskViewSet,basename='TaskViewSet')
+
 urlpatterns = [
     path('api/token/', jwt_views.TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    # path('api/token/refresh/', jwt_views.TokenRefreshView.as_view(), name='token_refresh'),
-    path('login/', UserLogin.as_view(), name='login'),
-    path('tasks/<int:pk>/add_comment/', TaskViewSet.as_view({'post': 'add_comment'}), name='task-add-comment'),
-    path('tass/<int:pk>/update_status/',TaskViewSet.as_view({'post':'update_status'}),name='update status'),
-    path('create_user',views.create_user),
+    path('', views.register, name='registration_register'),
+    path('login/',views.login_view,name='login_view'),
+    path('dashboard/', views.dashboard, name='dashboard'),
+    path('api/order/create/', OrderCreateView.as_view(), name='order-create'),
+    path('add_address/',AdressCreatView.as_view(),name='add_address'),
+    path('dashboard/', views.dashboard, name='dashboard'),
+    path('sales/',views.Salescreateview.as_view(),name='Salescreateview')
+
+
 
 
 ]+router.urls

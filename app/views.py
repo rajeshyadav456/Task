@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import viewsets,status
 from rest_framework import status
 
-from .models import Task, User,Comment
+from .models import *
 from .serializers import *
 from rest_framework.decorators import action
 from django.contrib.auth import get_user_model
@@ -16,132 +16,78 @@ from rest_framework_simplejwt.tokens import RefreshToken
 # Then you can use it to reference the User model
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.hashers import make_password
+from rest_framework import generics
 
 
-# Create your views here.
-class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
+# registration/views.py
+from django.shortcuts import render, redirect
+from .forms import RegistrationForm
 
+def register(request):
+    if request.method == 'POST':
+        form = RegistrationForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('login/')  # Redirect to a success page
+    else:
+        form = RegistrationForm()
 
-@api_view(["POST"])
-def create_user(request):
-    username = request.data.get('username')
-    password = request.data.get('password')
-    user_type=request.data.get('user_type')
+    return render(request, 'register.html', {'form': form})
 
-    if not username or not password:
-        return Response({
-            "success": False,
-            "message": "Username and password are required fields.",
-        }, status=status.HTTP_400_BAD_REQUEST)
+# registration/views.py
+from django.contrib.auth import login, authenticate
+from django.contrib.auth.forms import AuthenticationForm
+from django.shortcuts import render, redirect
+def login_view(request):
+    if request.method == 'POST':
+        email = request.POST['email']
+        password = request.POST['password']
+        user = authenticate(request, username=email, password=password)
 
-    try:
-        password = make_password(password)  
-        user = User.objects.create(username=username, password=password,user_type=user_type)
-        serializer = UserSerializer(user)
-        return Response({
-            "success": True,
-            "message": "User created successfully",
-            "data": serializer.data
-        }, status=status.HTTP_201_CREATED)
-    except Exception as e:
-        return Response({
-            "success": False,
-            "message": "User creation failed",
-            "error": str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task.objects.all()
-    serializer_class = TaskSerializer
-    def create(self, request, *args, **kwargs):
-        assignee = request.user
-
-        if assignee.user_type == 'Manager':
-            return super().create(request, *args, **kwargs)
+        if user is not None:
+            login(request, user)
+            return redirect('dashboard')  # Redirect to the dashboard or any other page upon successful login
         else:
-            return Response({'detail': 'Permission denied. Only managers can create tasks.'}, status=status.HTTP_403_FORBIDDEN)
+            # Handle login failure (e.g., display an error message)
+            return render(request, 'login.html', {'error_message': 'Invalid login credentials'})
+
+    return render(request, 'login.html')
 
 
-    @action(detail=True, methods=['post'])
-    def add_comment(self, request, pk=None):
-        task = self.get_object()
-        user = request.user 
+# dashboard/views.py
+from django.shortcuts import render
+from .models import Stock, Sales, Order
+from django.db.models import Sum
+from datetime import date
 
-        if user.user_type in ['MANAGER', 'DEVELOPER'] or user == task.assignee:
-            data = request.data.copy() 
-            data['task'] = task.pk
-            data['user'] = user.pk
-            serializer = CommentSerializer(data=data)
+def dashboard(request):
+    today = date.today()
 
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    total_stock = Stock.objects.filter(created_at__date=today).aggregate(Sum('quantity'))['quantity__sum'] or 0
+    total_sales = Sales.objects.filter(sale_date__date=today).aggregate(Sum('quantity_sold'))['quantity_sold__sum'] or 0
 
-    @action(detail=True, methods=['post'])
-    def update_status(self, request, pk=None):
-        task = self.get_object()
-        assignee = request.user
-        status = request.data.get('status')
+    # Calculate profit and loss based on your business logic
+    # This is just a placeholder, replace it with your actual calculation
+    profit_loss = total_sales * 0.2
 
-        if assignee.user_type in ['Manager', 'DEVELOPER']:
-            allowed_statuses = ['TODO', 'IN_PROGRESS', 'DONE']
+    new_orders = Order.objects.filter(order_date__date=today)
 
-            if status in allowed_statuses:
-                task.status = status
-                task.save()
-                return Response({'detail': 'Task status updated successfully.'})
-            else:
-                return Response({'detail': 'Invalid status value.'})
-        else:
-            return Response({'detail': 'Permission denied. Only managers and developers can change task status.'})
-  
+    return render(request, 'dashboard.html', {
+        'total_stock': total_stock,
+        'total_sales': total_sales,
+        'profit_loss': profit_loss,
+        'new_orders': new_orders,
+    })
+
+class OrderCreateView(generics.CreateAPIView):
+    queryset = Order.objects.all()
+    serializer_class = OrderSerializer
+
+class AdressCreatView(generics.CreateAPIView):
+    queryset=Address.objects.all()
+    serializer_class=AddressSerializer
 
 
-class UserLogin(APIView):
-    serializer_class = LoginSerializer
-    def post(self, request):
-        serializer = self.serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        username = data['username']
-        password = data['password']
-        user_type=data['user_type']
-
-        try:
-            user = get_user_model().objects.get(username=username)
-        except get_user_model().DoesNotExist:
-            return Response({
-                "success": False,
-                "message": "User does not exist",
-            }, status=status.HTTP_404_NOT_FOUND)
-
-        if user.is_superuser:
-            return Response({
-                "success": False,
-                "message": "Superusers are not allowed to log in.",
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        if check_password(password, user.password):  
-            user.last_login = timezone.now()
-            user.save()
-            refresh = RefreshToken.for_user(user)
-            access_token = str(refresh.access_token)
-            refresh_token = str(refresh)
-
-            return Response({
-                "success": True,
-                "message": "Logged In Successfully",
-                "user": UserSerializer(user, context={'request': request}).data,
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-            })
-        else:
-            return Response({
-                "success": False,
-                "message": "Invalid credentials",
-            }, status=status.HTTP_401_UNAUTHORIZED)
+class Salescreateview(generics.CreateAPIView):
+    queryset=Sales.objects.all()
+    serializer_class=SaleAdressSerializer
